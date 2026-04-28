@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+mcp
+beautifulsoup4
+requests
+pytest
+httpx

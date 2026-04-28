@@ -1,0 +1,7 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1e3a8a; /* Deep blue, common in gov sites */
+  --color-secondary: #0f766e; /* Teal */
+  --color-accent: #e11d48; /* Red for emphasis */
+}
