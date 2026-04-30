@@ -1,0 +1,28 @@
+steps:
+  # Build the MCP Server image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/election-mcp-server', './mcp_server']
+
+  # Push the image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/election-mcp-server']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'election-mcp-server'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/election-mcp-server'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--set-env-vars'
+      - 'GOOGLE_CLOUD_PROJECT=h2s-virtual-promptwars,VERTEX_AI_LOCATION=global,VERTEX_AI_DATA_STORE_ID=election-knowledge-base_1731518349202,FRONTEND_URL=https://election-frontend-981338374435.us-central1.run.app'
+
+images:
+  - 'gcr.io/$PROJECT_ID/election-mcp-server'
