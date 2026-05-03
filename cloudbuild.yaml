@@ -21,6 +21,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--memory'
+      - '2Gi'
       - '--set-env-vars'
       - 'GOOGLE_CLOUD_PROJECT=h2s-virtual-promptwars,VERTEX_AI_LOCATION=global,VERTEX_AI_DATA_STORE_ID=election-knowledge-base_1731518349202,FRONTEND_URL=https://election-frontend-981338374435.us-central1.run.app'
 

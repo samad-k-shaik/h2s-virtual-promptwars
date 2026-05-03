@@ -19,16 +19,22 @@ function App() {
 
     try {
       // Connect to your live Cloud Run Backend
-      const response = await fetch('https://election-mcp-server-981338374435.us-central1.run.app/chat', {
+      // UPDATED: Using the verified URL for the election-mcp-server
+      const response = await fetch('https://election-mcp-server-zlwbob2cma-uc.a.run.app/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage })
       })
       
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`)
+      }
+      
       const data = await response.json()
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.reply }])
+      setChatHistory(prev => [...prev, { role: 'assistant', content: data.reply || "I received an empty response from the server." }])
     } catch (error) {
-      setChatHistory(prev => [...prev, { role: 'assistant', content: "Sorry, I'm having trouble connecting to the election brain. Please check if the backend is live." }])
+      console.error("Chat Error:", error)
+      setChatHistory(prev => [...prev, { role: 'assistant', content: "Sorry, I'm having trouble connecting to the election brain. This usually happens if the backend service is starting up or if there's a network issue. Please try again in a few seconds." }])
     } finally {
       setIsLoading(false)
     }

@@ -1,66 +1,96 @@
-from playwright.sync_api import sync_playwright
+import asyncio
+from playwright.async_api import async_playwright
 import logging
 from bs4 import BeautifulSoup
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def scrape_eci_latest_updates():
+async def scrape_eci_latest_updates():
     """
-    Scrapes the latest updates from the Election Commission of India website using Playwright.
-    This bypasses basic bot detection (403 errors) that simple requests often face.
+    Scrapes the latest updates from the ECI Unified Portal using Async Playwright.
+    This portal is more robust and less likely to block GCP IP ranges.
     """
-    url = "https://eci.gov.in/"
+    url = "https://ecinet.eci.gov.in/home/eciUpdates"
     
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            
-            logger.info(f"Navigating to {url}...")
-            page.goto(url, wait_until="networkidle", timeout=60000)
-            
-            # Get the content after JavaScript execution
-            content = page.content()
-            browser.close()
-            
-            soup = BeautifulSoup(content, 'html.parser')
-            
-            updates = []
-            # Looking for links that look like news or updates
-            # Often ECI site has a 'what's new' section
-            links = soup.find_all('a', href=True)
-            
-            for link in links:
-                text = link.get_text(strip=True)
-                href = link['href']
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                context = await browser.new_context(user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                page = await context.new_page()
                 
-                # Heuristic to find relevant updates
-                if len(text) > 25 and ("/whats-new/" in href or "/notifications/" in href or "update" in text.lower()):
-                    updates.append({
-                        "title": text,
-                        "link": href if href.startswith('http') else url.rstrip('/') + '/' + href.lstrip('/')
-                    })
-                    if len(updates) >= 5:
-                        break
-            
-            # If no specific updates found, just take some prominent links
-            if not updates:
-                for link in links[:50]:
-                    text = link.get_text(strip=True)
-                    if len(text) > 30:
+                logger.info(f"Navigating to {url}...")
+                try:
+                    # Try domcontentloaded first as it's faster and more reliable on slow sites
+                    await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+                    # Then wait a bit for any dynamic content
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    logger.warning(f"Navigation issue, trying to proceed with available content: {e}")
+                
+                # Try to wait for the specific results text if it exists
+                try:
+                    await page.wait_for_selector("text=Result(s)", timeout=10000)
+                except:
+                    pass
+                
+                content = await page.content()
+                logger.info(f"Page content length: {len(content)}")
+                soup = BeautifulSoup(content, 'html.parser')
+                updates = []
+                # Target MUI specific structures found in the portal
+                # 1. H6 tags inside CardActionArea
+                # 2. MuiTypography-subtitle1
+                # 3. Any element with 'title' or 'update' in class
+                title_elements = soup.find_all(['h6', 'span', 'p', 'div'], class_=lambda c: c and any(kw in c for kw in ['MuiTypography-subtitle1', 'MuiTypography-h6', 'MuiCardActionArea-root', 'update-title']))
+                
+                if not title_elements:
+                    # Direct check for all h6 tags which often contain titles
+                    title_elements = soup.find_all('h6')
+                
+                if not title_elements:
+                    # Fallback to all links and common containers
+                    title_elements = soup.find_all(['a', 'button', 'div'], recursive=True)
+
+                logger.info(f"Found {len(title_elements)} potential update titles. Filtering...")
+                
+                for element in title_elements:
+                    text = element.get_text(strip=True)
+                    # For links, we look for the nearest parent button or a tag
+                    parent = element.find_parent(['button', 'a'])
+                    href = ""
+                    if parent:
+                        href = parent.get('href', '')
+                        # If it's a button, it might have data-url or similar, but often in MUI it's just a click handler
+                        # For now, we'll use the text to identify relevance
+                    
+                    is_download_link = "/eci-backend/public/api/download" in href
+                    relevant_keywords = ["notification", "press-release", "update", "current", "news", "2024", "2025", "2026", "schedule", "result", "polling", "voter"]
+                    
+                    if len(text) > 15 and (any(kw in text.lower() for kw in relevant_keywords) or any(kw in href.lower() for kw in relevant_keywords)):
+                        full_link = href
+                        if href and not href.startswith('http'):
+                            full_link = "https://ecinet.eci.gov.in" + (href if href.startswith('/') else '/' + href)
+                        elif not href:
+                            # Fallback link to the portal itself if we can't find a direct document link
+                            full_link = url
+                            
                         updates.append({
                             "title": text,
-                            "link": link['href'] if link['href'].startswith('http') else url.rstrip('/') + '/' + link['href'].lstrip('/')
+                            "link": full_link
                         })
-                        if len(updates) >= 5:
+                        if len(updates) >= 10:
                             break
-                            
-            if not updates:
-                return [{"title": "Fetched successfully but no specific updates identified.", "link": url}]
                 
-            return updates
-
+                if not updates:
+                    logger.warning("No updates found on Unified Portal. Returning general link.")
+                    return [{"title": "Visit ECI Unified Portal for the latest updates.", "link": url}]
+                
+                logger.info(f"Successfully identified {len(updates)} updates from Unified Portal.")
+                return updates
+            finally:
+                await browser.close()
     except Exception as e:
-        logger.error(f"Error scraping ECI site with Playwright: {e}")
-        return [{"error": f"Failed to fetch updates via browser: {str(e)}"}]
+        logger.error(f"Error scraping ECI Unified Portal: {e}")
+        return [{"error": f"Failed to fetch updates: {str(e)}"}]
